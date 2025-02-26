@@ -14,7 +14,7 @@ import (
 
 type AnalysisResult struct {
 	Service       string `json:"service"`
-	Applicability int    `json:"applicability"`
+	Applicability string `json:"applicability"`
 }
 
 type OpenAIService struct {
@@ -42,8 +42,28 @@ func (o *OpenAIService) AnalyzePrompt(prompt string) ([]AnalysisResult, error) {
 		"model": "gpt-3.5-turbo",
 		"messages": []map[string]string{
 			{
-				"role":    "user",
-				"content": fmt.Sprintf(`Given the prompt, "%s" generate a JSON array ranking how applicable each service is for this prompt.`, prompt),
+				"role": "user",
+				"content": fmt.Sprintf(`Given the prompt, "%s" generate a JSON array ranking how applicable each service is for this prompt. Use the format:
+				[
+  {
+	"service": "Ticketing",
+	"applicability": "XX"
+  },
+  {
+	"service": "Accommodations",
+	"applicability": "XX"
+  },
+  {
+	"service": "Restaurants",
+	"applicability": "XX"
+  }
+]
+
+- "Applicability" reflects the relevance of each service for fulfilling the user's goal.
+- Rank each service from 0%% (irrelevant) to 100%% (highly relevant).
+- In the JSON object, don't include the percent symbol in the applicability value.
+- For context: The "Ticketing" service provides tickets to events, "Accommodations" helps with travel accommodations, and "Restaurants" suggests nearby dining options.
+Return only the JSON object as a string`, prompt),
 			},
 		},
 		"max_tokens":  100,
@@ -52,12 +72,12 @@ func (o *OpenAIService) AnalyzePrompt(prompt string) ([]AnalysisResult, error) {
 
 	jsonValue, err := json.Marshal(jsonData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error marshaling json data: %w", err)
 	}
 
 	request, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", strings.NewReader(string(jsonValue)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating new request: %w", err)
 	}
 
 	request.Header.Set("Content-Type", "application/json")
@@ -66,39 +86,50 @@ func (o *OpenAIService) AnalyzePrompt(prompt string) ([]AnalysisResult, error) {
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error making request: %w", err)
 	}
 	defer response.Body.Close()
 
 	data, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	var respData map[string]interface{}
 	if err := json.Unmarshal(data, &respData); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error unmarshaling response data: %w", err)
 	}
 
-	return o.FilterOpenAIResponse(respData), nil
+	return o.FilterOpenAIResponse(respData)
 }
 
-func (o *OpenAIService) FilterOpenAIResponse(data map[string]interface{}) []AnalysisResult {
-	choices := data["choices"].([]interface{})
-	message := choices[0].(map[string]interface{})["message"].(string)
+func (o *OpenAIService) FilterOpenAIResponse(data map[string]interface{}) ([]AnalysisResult, error) {
+	choices, ok := data["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		return nil, fmt.Errorf("error: 'choices' is not a slice or is empty")
+	}
 
+	choice, ok := choices[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("error: first item in 'choices' is not a map")
+	}
+
+	messageMap, ok := choice["message"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("error: 'message' is not a map")
+	}
+
+	content, ok := messageMap["content"].(string)
+	if !ok {
+		return nil, fmt.Errorf("error: 'content' is not a string")
+	}
+
+	// Directly unmarshal JSON string
 	var services []AnalysisResult
-	if err := json.Unmarshal([]byte(message), &services); err != nil {
-		log.Println("Error unmarshaling services:", err)
-		return nil // Depending on requirements, might return error
+	err := json.Unmarshal([]byte(content), &services)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling 'content' into services: %v", err)
 	}
 
-	threshold := 50
-	var filteredResults []AnalysisResult
-	for _, service := range services {
-		if service.Applicability >= threshold {
-			filteredResults = append(filteredResults, service)
-		}
-	}
-	return filteredResults
+	return services, nil
 }

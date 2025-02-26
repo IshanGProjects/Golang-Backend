@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
+	"strconv"
 )
 
 type ServiceDirector struct {
@@ -26,11 +26,10 @@ func NewServiceDirector() *ServiceDirector {
 	return sd
 }
 
-// ServiceResponse structure for channel communication
 type ServiceResponse struct {
-	Service string
-	Data    interface{}
-	Error   string
+	Service string      `json:"service"`
+	Data    interface{} `json:"data"`
+	Error   string      `json:"error"`
 }
 
 func (sd *ServiceDirector) ProcessPrompt(w http.ResponseWriter, r *http.Request) {
@@ -47,76 +46,69 @@ func (sd *ServiceDirector) ProcessPrompt(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Call OpenAI service with prompt
-	analysisResults, err := sd.OpenAIService.AnalyzePrompt(prompt) // Assuming AnalyzePrompt now correctly takes a string prompt and returns results and an error
+	analysisResults, err := sd.OpenAIService.AnalyzePrompt(prompt)
 	if err != nil {
 		log.Println("Error processing prompt:", err)
 		http.Error(w, "Failed to analyze the prompt", http.StatusInternalServerError)
 		return
 	}
 
-	var wg sync.WaitGroup
-	resultsChan := make(chan *ServiceResponse, len(analysisResults))
+	//Testing the response for the result types
+	for _, result := range analysisResults {
+		log.Printf("Service: %s, Applicability: %s%%\n", result.Service, result.Applicability)
+	}
+
+	var serviceResponses []ServiceResponse
 
 	for _, result := range analysisResults {
-		wg.Add(1)
-		go func(result AnalysisResult) {
-			defer wg.Done()
-			if result.Applicability < 90 {
-				resultsChan <- &ServiceResponse{
-					Service: result.Service,
-					Data:    nil,
-					Error:   fmt.Sprintf("Applicability below threshold (%d%%)", result.Applicability),
-				}
-				return
-			}
+		service := result.Service
+		applicabilityInt, err := strconv.Atoi(result.Applicability)
 
-			factory, ok := sd.Factories[result.Service]
-			if !ok {
-				resultsChan <- &ServiceResponse{
-					Service: result.Service,
-					Data:    nil,
-					Error:   "Factory not found for service",
-				}
-				return
-			}
+		if err != nil {
+			log.Printf("Error converting applicability to integer: %v", err)
+		}
 
-			product := factory.CreateProduct()
-			rawData, err := product.PerformAction(map[string]string{"prompt": prompt})
-			if err != nil {
-				resultsChan <- &ServiceResponse{
-					Service: result.Service,
-					Data:    nil,
-					Error:   err.Error(),
-				}
-				return
-			}
+		if applicabilityInt < 90 {
+			log.Printf("Skipping service: %s (Applicability: %d%%)\n", service, applicabilityInt)
+			serviceResponses = append(serviceResponses, ServiceResponse{
+				Service: service,
+				Data:    nil,
+				Error:   fmt.Sprintf("Applicability below threshold (%d%%)", applicabilityInt),
+			})
+			continue
+		}
 
-			resultsChan <- &ServiceResponse{
-				Service: result.Service,
-				Data:    rawData,
-				Error:   "",
-			}
-		}(result)
+		factory, exists := sd.Factories[service]
+		if !exists {
+			errMsg := fmt.Sprintf("Factory not found for service: %s", service)
+			log.Println(errMsg)
+			serviceResponses = append(serviceResponses, ServiceResponse{
+				Service: service,
+				Data:    nil,
+				Error:   errMsg,
+			})
+			continue
+		}
+
+		product := factory.CreateProduct()
+		rawData, err := product.PerformAction(map[string]string{"prompt": prompt})
+		if err != nil {
+			log.Printf("Error processing service %s: %v\n", service, err)
+			serviceResponses = append(serviceResponses, ServiceResponse{
+				Service: service,
+				Data:    nil,
+				Error:   err.Error(),
+			})
+			continue
+		}
+
+		serviceResponses = append(serviceResponses, ServiceResponse{
+			Service: service,
+			Data:    rawData,
+		})
 	}
 
-	wg.Wait()
-	close(resultsChan)
-
-	serviceResponses := make([]*ServiceResponse, 0)
-	for res := range resultsChan {
-		serviceResponses = append(serviceResponses, res)
-	}
-
-	// Compile all responses into a single JSON output
-	responseData, err := json.Marshal(map[string]interface{}{
-		"message":   "Processed all services",
-		"responses": serviceResponses,
-	})
-	if err != nil {
-		http.Error(w, "Failed to marshal response data", http.StatusInternalServerError)
-		return
-	}
+	respData, _ := json.Marshal(serviceResponses)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(responseData)
+	w.Write(respData)
 }
