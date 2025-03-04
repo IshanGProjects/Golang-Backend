@@ -32,8 +32,8 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 	}
 
 	//Trimming data to avoid hitting the token limit
-	if len(jsonData) > 10000 { // Example threshold, adjust based on needs and token count
-		jsonData = jsonData[:10000] // Trim data; consider more intelligent trimming based on content
+	if len(jsonData) > 10000 {
+		jsonData = jsonData[:10000]
 	}
 
 	correctedData := bytes.ReplaceAll(jsonData, []byte("`"), []byte("'"))
