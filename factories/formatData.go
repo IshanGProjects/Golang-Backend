@@ -44,7 +44,7 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a data extraction assistant that processes raw JSON data from multiple services. Extract activities in a standardized format...",
+				"content": "You are a data extraction assistant that processes raw JSON data from multiple services. Extract activities into a standardized format...",
 			},
 			{
 				"role": "user",
@@ -106,8 +106,10 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 
 	llmOutput := response.Choices[0].Message.Content
 
+	fmt.Println("The content is: ", llmOutput)
+
 	// Clean up the output if necessary
-	cleanedOutput := strings.Replace(llmOutput, " ", "", -1)
+	cleanedOutput := strings.TrimSpace(llmOutput)
 
 	// Remove Markdown backticks and trim spaces
 	cleanedOutput = strings.Trim(cleanedOutput, "` \n")
@@ -115,17 +117,12 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 	// Remove `json` prefix if present
 	cleanedOutput = strings.TrimPrefix(cleanedOutput, "json")
 
-	cleanedOutput = strings.ReplaceAll(cleanedOutput, "\n", "")
-	cleanedOutput = strings.ReplaceAll(cleanedOutput, "\\n", "")
-
 	var formattedData map[string]interface{}
 	if err := json.Unmarshal([]byte(cleanedOutput), &formattedData); err != nil {
 		return nil, fmt.Errorf("error parsing formatted data: %v", err)
 	}
 
-	for _, activity := range formattedData {
-		parsedActivities = append(parsedActivities, activity)
-	}
+	parsedActivities = append(parsedActivities, formattedData)
 
 	return parsedActivities, nil
 }

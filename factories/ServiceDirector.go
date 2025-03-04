@@ -104,8 +104,6 @@ func (sd *ServiceDirector) ProcessPrompt(w http.ResponseWriter, r *http.Request)
 
 		// Format the raw data
 		formattedData, err := FormatData(service, []CombinedData{{Service: service, Data: rawData}})
-
-		fmt.Printf("Formatted data for service %s: %v\n", service, formattedData)
 		if err != nil {
 			log.Printf("Error formatting data for service %s: %v\n", service, err)
 			serviceResponses = append(serviceResponses, ServiceResponse{

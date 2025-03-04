@@ -198,7 +198,6 @@ func AnalyzePromptWithLLM(prompt string) (*TicketmasterAction, error) {
 		return nil, fmt.Errorf("failed to unmarshal action from content: %v", err)
 	}
 
-	// Convert map[string]interface{} to map[string]string
 	params := make(map[string]string)
 	for key, value := range intermediate.Parameters {
 		params[key] = toString(value)
