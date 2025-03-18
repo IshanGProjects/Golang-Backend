@@ -23,6 +23,7 @@ func NewServiceDirector() *ServiceDirector {
 		OpenAIService: NewOpenAIService(),
 	}
 	sd.Factories["Ticketing"] = &TicketmasterFactory{}
+	sd.Factories["Accommodations"] = &TripAdvisorFactory{}
 	return sd
 }
 
