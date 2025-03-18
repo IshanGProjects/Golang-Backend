@@ -80,7 +80,7 @@ func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[stri
 	baseURL := "https://api.content.tripadvisor.com/api/v1/location/search"
 
 	// Construct the endpoint URL by appending the action and ".json" properly
-	endpoint := fmt.Sprintf("%s/%s.json", baseURL, tra.Action)
+	endpoint := fmt.Sprintf("%s", baseURL)
 
 	// Add the action parameters to the endpoint if they exist
 	println("the number of params is: ", len(tra.Parameters))
@@ -93,7 +93,7 @@ func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[stri
 
 	// Add the API key and other parameters to the query
 	q := u.Query()
-	q.Set("apikey", p.TripadvisorProductApiKey)
+	q.Set("key", p.TripadvisorProductApiKey)
 	for k, v := range tra.Parameters {
 		q.Add(k, v)
 	}
@@ -218,7 +218,10 @@ Include details on how to use the following query parameters effectively:
 		Action     string                 `json:"action"`
 		Parameters map[string]interface{} `json:"parameters"`
 	}
-	content := strings.TrimSpace(response.Choices[0].Message.Content)
+	content := strings.TrimSpace(strings.Trim(response.Choices[0].Message.Content, "`"))
+	content = strings.Trim(content, "json")
+	content = strings.TrimSuffix(content, "```json")
+	content = strings.TrimSuffix(content, "```")
 	print("The content is: ", content)
 
 	if err := json.Unmarshal([]byte(content), &intermediate); err != nil {
@@ -237,3 +240,6 @@ Include details on how to use the following query parameters effectively:
 
 	return &action, nil
 }
+
+//https://api.content.tripadvisor.com/api/v1/location/search?key=0E7FF116CFFD4F09A473F0632C800D9F&searchQuery=Denver&category=hotel&language=en
+//https://api.content.tripadvisor.com/api/v1/location/search/?apikey=0E7FF116CFFD4F09A473F0632C800D9F&category=hotels&searchQuery=Denver
