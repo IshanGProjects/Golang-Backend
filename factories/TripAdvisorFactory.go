@@ -76,67 +76,6 @@ func (p *TripAdvisorProduct) PerformAction(data map[string]string) (map[string]i
 	return p.performHTTPRequest(actionDetails)
 }
 
-// func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[string]interface{}, error) {
-// 	// Construct the endpoint URL
-// 	baseURL := p.TripadvisorProductBaseUrl
-// 	endpoint := fmt.Sprintf("%s?%s", baseURL, "key="+p.TripadvisorProductApiKey)
-
-// 	// Create URL from string
-// 	u, err := url.Parse(endpoint)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error parsing URL: %v", err)
-// 	}
-
-// 	// Prepare the query parameters
-// 	q := u.Query()
-// 	for k, v := range tra.Parameters {
-// 		// Ensure the correct parameter names are used as expected by the TripAdvisor API
-// 		if k == "query" || k == "keyword" { // Handle both 'query' and 'keyword' as 'searchQuery'
-// 			q.Set("searchQuery", v) // Set 'searchQuery'
-// 		} else {
-// 			q.Set(k, v)
-// 		}
-// 	}
-
-// 	fmt.Printf("the parameters are: %v\n", q)
-
-// 	// Encode the parameters and update the URL
-// 	u.RawQuery = q.Encode()
-
-// 	fmt.Printf("The full URL is: %s\n", u.String())
-
-// 	// Make the HTTP GET request
-// 	resp, err := http.Get(u.String())
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error making HTTP request: %v", err)
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Decode the JSON response into a generic interface
-// 	var result interface{}
-// 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-// 		return nil, fmt.Errorf("error decoding JSON response: %v", err)
-// 	}
-
-// 	// Check if the result is an array or a map and handle accordingly
-// 	switch v := result.(type) {
-// 	case []interface{}:
-// 		// Handle the case where the response is an array
-// 		if len(v) > 0 {
-// 			// Use the first element of the array if applicable
-// 			if firstElement, ok := v[0].(map[string]interface{}); ok {
-// 				return firstElement, nil
-// 			}
-// 		}
-// 		return nil, fmt.Errorf("unexpected array format in JSON response")
-// 	case map[string]interface{}:
-// 		// Handle the case where the response is a map
-// 		return v, nil
-// 	default:
-// 		return nil, fmt.Errorf("unexpected JSON response format")
-// 	}
-// }
-
 func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[string]interface{}, error) {
 	// Construct the endpoint URL
 	baseURL := p.TripadvisorProductBaseUrl
@@ -227,7 +166,7 @@ func AnalyzeTripAdvisorPromptWithLLM(prompt string) (*TripadvisorAction, error) 
 		"messages": []map[string]string{
 			{"role": "system", "content": "You are a system that derives API actions and query parameters based on user prompts. Please return only a JSON object with the action and parameters."},
 			{"role": "system", "content": "Query parameters with dates must be in the valid format YYYY-MM-DDTHH:mm:ssZ (example: 2020-08-01T14:00:00Z)."},
-			{"role": "user", "content": "Remove any part of the query that is realted to Tickets or accommodations."},
+			{"role": "user", "content": "Remove any part of the query that is related to Tickets or accommodations."},
 			{"role": "user", "content": fmt.Sprintf(`Given the user's request: '%s', determine the most appropriate Tripadvisor API action and parameters. Return a JSON object with the action and parameters. 
 Consider valid actions such as:
 - searchQuery (string): Search for locations based on a query string.
