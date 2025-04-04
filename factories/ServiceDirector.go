@@ -24,6 +24,7 @@ func NewServiceDirector() *ServiceDirector {
 	}
 	sd.Factories["Ticketing"] = &TicketmasterFactory{}
 	sd.Factories["Accommodations"] = &TripAdvisorFactory{}
+	sd.Factories["Restaurants"] = &TripAdvisorFactory{}
 	return sd
 }
 
@@ -121,7 +122,12 @@ func (sd *ServiceDirector) ProcessPrompt(w http.ResponseWriter, r *http.Request)
 		})
 	}
 
-	respData, _ := json.Marshal(serviceResponses)
+	respData, err := json.Marshal(serviceResponses)
+	if err != nil {
+		log.Printf("Error marshaling response data: %v\n", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(respData)
 }

@@ -2,6 +2,7 @@ package factories
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,31 +76,91 @@ func (p *TripAdvisorProduct) PerformAction(data map[string]string) (map[string]i
 	return p.performHTTPRequest(actionDetails)
 }
 
+// func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[string]interface{}, error) {
+// 	// Construct the endpoint URL
+// 	baseURL := p.TripadvisorProductBaseUrl
+// 	endpoint := fmt.Sprintf("%s?%s", baseURL, "key="+p.TripadvisorProductApiKey)
+
+// 	// Create URL from string
+// 	u, err := url.Parse(endpoint)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error parsing URL: %v", err)
+// 	}
+
+// 	// Prepare the query parameters
+// 	q := u.Query()
+// 	for k, v := range tra.Parameters {
+// 		// Ensure the correct parameter names are used as expected by the TripAdvisor API
+// 		if k == "query" || k == "keyword" { // Handle both 'query' and 'keyword' as 'searchQuery'
+// 			q.Set("searchQuery", v) // Set 'searchQuery'
+// 		} else {
+// 			q.Set(k, v)
+// 		}
+// 	}
+
+// 	fmt.Printf("the parameters are: %v\n", q)
+
+// 	// Encode the parameters and update the URL
+// 	u.RawQuery = q.Encode()
+
+// 	fmt.Printf("The full URL is: %s\n", u.String())
+
+// 	// Make the HTTP GET request
+// 	resp, err := http.Get(u.String())
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error making HTTP request: %v", err)
+// 	}
+// 	defer resp.Body.Close()
+
+// 	// Decode the JSON response into a generic interface
+// 	var result interface{}
+// 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+// 		return nil, fmt.Errorf("error decoding JSON response: %v", err)
+// 	}
+
+// 	// Check if the result is an array or a map and handle accordingly
+// 	switch v := result.(type) {
+// 	case []interface{}:
+// 		// Handle the case where the response is an array
+// 		if len(v) > 0 {
+// 			// Use the first element of the array if applicable
+// 			if firstElement, ok := v[0].(map[string]interface{}); ok {
+// 				return firstElement, nil
+// 			}
+// 		}
+// 		return nil, fmt.Errorf("unexpected array format in JSON response")
+// 	case map[string]interface{}:
+// 		// Handle the case where the response is a map
+// 		return v, nil
+// 	default:
+// 		return nil, fmt.Errorf("unexpected JSON response format")
+// 	}
+// }
+
 func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[string]interface{}, error) {
-	// Make sure the base URL is correct and ends without a slash
-	baseURL := "https://api.content.tripadvisor.com/api/v1/location/search"
+	// Construct the endpoint URL
+	baseURL := p.TripadvisorProductBaseUrl
+	endpoint := fmt.Sprintf("%s?%s", baseURL, "key="+p.TripadvisorProductApiKey)
 
-	// Construct the endpoint URL by appending the action and ".json" properly
-	endpoint := fmt.Sprintf("%s", baseURL)
-
-	// Add the action parameters to the endpoint if they exist
-	println("the number of params is: ", len(tra.Parameters))
-
-	// Parse the URL to check for errors
+	// Create URL from string
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing URL: %v", err)
 	}
 
-	// Add the API key and other parameters to the query
+	// Prepare the query parameters
 	q := u.Query()
-	q.Set("key", p.TripadvisorProductApiKey)
 	for k, v := range tra.Parameters {
-		q.Add(k, v)
+		// Ensure the correct parameter names are used as expected by the TripAdvisor API
+		if k == "query" || k == "keyword" { // Handle both 'query' and 'keyword' as 'searchQuery'
+			q.Set("searchQuery", v) // Set 'searchQuery'
+		} else {
+			q.Set(k, v)
+		}
 	}
 
+	// Encode the parameters and update the URL
 	u.RawQuery = q.Encode()
-
 	fmt.Println("The full URL is: ", u.String())
 
 	// Make the HTTP GET request
@@ -109,19 +170,50 @@ func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[stri
 	}
 	defer resp.Body.Close()
 
-	// Decode the JSON response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	// Read the response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	// Attempt to unmarshal into a generic interface first to inspect the data type
+	var result interface{}
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		return nil, fmt.Errorf("error decoding JSON response: %v", err)
 	}
 
-	return result, nil
+	// Handle both possible data types of the response
+	switch res := result.(type) {
+	case map[string]interface{}:
+		// The response is a single JSON object (map)
+		return res, nil
+	case []interface{}:
+		// The response is a JSON array
+		if len(res) > 0 {
+			if firstElem, ok := res[0].(map[string]interface{}); ok {
+				return firstElem, nil
+			}
+			return nil, errors.New("first element of the array is not a JSON object")
+		}
+		return nil, errors.New("JSON array is empty")
+	default:
+		return nil, errors.New("JSON response is neither an array nor an object")
+	}
 }
 
 // TripadvisorAction contains the action and parameters required for the Tripadvisor API
 type TripadvisorAction struct {
 	Action     string            `json:"action"`
 	Parameters map[string]string `json:"parameters"`
+}
+
+// Helper function to convert map[string]interface{} to map[string]string
+func convertToStringMap(input map[string]interface{}) map[string]string {
+	result := make(map[string]string)
+	for key, value := range input {
+		result[key] = fmt.Sprintf("%v", value)
+	}
+	return result
 }
 
 // AnalyzePromptWithLLM uses an LLM to analyze the prompt and suggest Ticketmaster actions
@@ -135,9 +227,10 @@ func AnalyzeTripAdvisorPromptWithLLM(prompt string) (*TripadvisorAction, error) 
 		"messages": []map[string]string{
 			{"role": "system", "content": "You are a system that derives API actions and query parameters based on user prompts. Please return only a JSON object with the action and parameters."},
 			{"role": "system", "content": "Query parameters with dates must be in the valid format YYYY-MM-DDTHH:mm:ssZ (example: 2020-08-01T14:00:00Z)."},
+			{"role": "user", "content": "Remove any part of the query that is realted to Tickets or accommodations."},
 			{"role": "user", "content": fmt.Sprintf(`Given the user's request: '%s', determine the most appropriate Tripadvisor API action and parameters. Return a JSON object with the action and parameters. 
 Consider valid actions such as:
-- searchQuery (string, required): Text to use for searching based on the name of the location.
+- searchQuery (string): Search for locations based on a query string.
 - category (string): Filters result set based on property type. Valid options are 'hotels', 'attractions', 'restaurants', and 'geos'.
 - phone (string): Phone number to filter the search results by (this can be in any format with spaces and dashes but without the '+' sign at the beginning).
 - address (string): Address to filter the search results by.
@@ -145,29 +238,8 @@ Consider valid actions such as:
 - radius (number > 0): Length of the radius from the provided latitude/longitude pair to filter results.
 - radiusUnit (string): Unit for length of the radius. Valid options are 'km', 'mi', 'm' (km=kilometers, mi=miles, m=meters).
 - language (string, defaults to 'en'): The language in which to return results (e.g., 'en' for English or 'es' for Spanish) from the list of supported languages.
-
-Include details on how to use the following query parameters effectively:
-- id: Filter entities by its id.
-- keyword: Keyword to search on.
-- attractionId: Filter by attraction id.
-- venueId: Filter by venue id.
-- postalCode: Filter by postal code / zipcode.
-- latlong: Filter events by latitude and longitude (deprecated).
-- radius: Radius of the area for event search.
-- unit: Unit of the radius, e.g., miles, km.
-- source: Filter entities by source name, e.g., ticketmaster, universe, frontgate.
-- locale: Locale in ISO code format.
-- marketId, startDateTime, endDateTime: Filter events by market, start and end dates.
-- includeTBA, includeTBD: Include events with dates to be announced or defined.
-- size, page: Pagination options.
-- sort: Sorting order of the search results, e.g., 'name,asc', 'date,desc'.
-- onsaleStartDateTime, onsaleEndDateTime: Filter events by onsale start and end dates.
-- city, countryCode, stateCode: Filter by geographical location.
-- classificationName, classificationId: Filter by type of event, like genre or segment.
-- includeFamily: Include family-friendly classifications.
-- promoterId, genreId, subGenreId, typeId, subTypeId: Filter by various IDs related to event categorization.
-- geoPoint: Filter events by geoHash.
 - includeSpellcheck: Include spell check suggestions in response.`, prompt)},
+			{"role": "system", "content": "response_format={ \"type\": \"json_object\" }"},
 		},
 		"max_tokens": 500,
 	}
@@ -214,32 +286,86 @@ Include details on how to use the following query parameters effectively:
 		return nil, fmt.Errorf("no response or empty content from LLM")
 	}
 
-	var intermediate struct {
-		Action     string                 `json:"action"`
-		Parameters map[string]interface{} `json:"parameters"`
-	}
-	content := strings.TrimSpace(strings.Trim(response.Choices[0].Message.Content, "`"))
-	content = strings.Trim(content, "json")
-	content = strings.TrimSuffix(content, "```json")
+	var intermediate interface{}
+	content := strings.TrimSpace(response.Choices[0].Message.Content)
+	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimSuffix(content, "```")
-	print("The content is: ", content)
+	content = strings.TrimSpace(content)
+	println("The content IS: ", content)
 
+	// Attempt to unmarshal into a generic interface
 	if err := json.Unmarshal([]byte(content), &intermediate); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal action from content: %v", err)
 	}
 
+	// Check if the intermediate is an array or a map
+	switch v := intermediate.(type) {
+	case []interface{}:
+		if len(v) > 0 {
+			firstElement, ok := v[0].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("unexpected array element type")
+			}
+			intermediate = firstElement
+		} else {
+			return nil, fmt.Errorf("empty array in response")
+		}
+	case map[string]interface{}:
+		// Already a map, no changes needed
+	default:
+		return nil, fmt.Errorf("unexpected response format: neither array nor map")
+	}
+
+	// Check if the content is an array or a map
+	var action TripadvisorAction
+	switch v := intermediate.(type) {
+	case []interface{}:
+		// Handle array case (e.g., take the first element if applicable)
+		if len(v) > 0 {
+			firstElement, ok := v[0].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("unexpected array element type")
+			}
+			parametersMap, ok := firstElement["parameters"].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("parameters field is not of expected type map[string]interface{}")
+			}
+			action = TripadvisorAction{
+				Action:     firstElement["action"].(string),
+				Parameters: convertToStringMap(parametersMap),
+			}
+		} else {
+			return nil, fmt.Errorf("empty array in response")
+		}
+	case map[string]interface{}:
+		// Handle map case
+		action = TripadvisorAction{
+			Action:     v["action"].(string),
+			Parameters: convertToStringMap(v["parameters"].(map[string]interface{})),
+		}
+	default:
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
 	params := make(map[string]string)
-	for key, value := range intermediate.Parameters {
+	typedIntermediate, ok := intermediate.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for intermediate, expected map[string]interface{}")
+	}
+
+	for key, value := range typedIntermediate["parameters"].(map[string]interface{}) {
 		params[key] = toString(value)
 	}
 
-	action := TripadvisorAction{
-		Action:     intermediate.Action,
+	typedIntermediate, ok = intermediate.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for intermediate, expected map[string]interface{}")
+	}
+
+	action = TripadvisorAction{
+		Action:     typedIntermediate["action"].(string),
 		Parameters: params,
 	}
 
 	return &action, nil
 }
-
-//https://api.content.tripadvisor.com/api/v1/location/search?key=0E7FF116CFFD4F09A473F0632C800D9F&searchQuery=Denver&category=hotel&language=en
-//https://api.content.tripadvisor.com/api/v1/location/search/?apikey=0E7FF116CFFD4F09A473F0632C800D9F&category=hotels&searchQuery=Denver

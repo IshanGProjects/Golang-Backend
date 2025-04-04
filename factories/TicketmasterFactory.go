@@ -103,12 +103,23 @@ func (p *TicketmasterProduct) performHTTPRequest(tma TicketmasterAction) (map[st
 	defer resp.Body.Close()
 
 	// Decode the JSON response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("error decoding JSON response: %v", err)
+	var results []map[string]interface{}
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var result map[string]interface{}
+		if err := decoder.Decode(&result); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("error decoding JSON response: %v", err)
+		}
+		results = append(results, result)
 	}
 
-	return result, nil
+	// Return the parsed results
+	if len(results) == 1 {
+		return results[0], nil
+	}
+	return map[string]interface{}{"results": results}, nil
 }
 
 // TicketmasterAction contains the action and parameters required for the Ticketmaster API
@@ -141,7 +152,9 @@ func AnalyzePromptWithLLM(prompt string) (*TicketmasterAction, error) {
 		"messages": []map[string]string{
 			{"role": "system", "content": "You are a system that dervies API actions and query paramters based on user prompts. Please return only a json object with the action and parameters."},
 			{"role": "system", "content": "Query param with date must be of valid format YYYY-MM-DDTHH:mm:ssZ {example: 2020-08-01T14:00:00Z }"},
+			{"role": "user", "content": "Remove any part of the query that is realted to restaurants or accommodations."},
 			{"role": "user", "content": fmt.Sprintf("Given the user's request: '%s', determine the most appropriate Ticketmaster API action and parameters. Return a JSON object with the action and parameters. Consider valid actions such as attractions, classifications, events, venues. Include details on how to use the following query parameters effectively: \n- id (Filter entities by its id)\n- keyword (Keyword to search on)\n- attractionId (Filter by attraction id)\n- venueId (Filter by venue id)\n- postalCode (Filter by postal code / zipcode)\n- latlong (Filter events by latitude and longitude; deprecated)\n- radius (Radius of the area for event search)\n- unit (Unit of the radius, e.g., miles, km)\n- source (Filter entities by source name, e.g., ticketmaster, universe, frontgate)\n- locale (Locale in ISO code format)\n- marketId, startDateTime, endDateTime (Filter events by market, start and end dates)\n- includeTBA, includeTBD (Include events with dates to be announced or defined)\n- size, page (Pagination options)\n- sort (Sorting order of the search results, e.g., 'name,asc', 'date,desc')\n- onsaleStartDateTime, onsaleEndDateTime (Filter events by onsale start and end dates)\n- city, countryCode, stateCode (Filter by geographical location)\n- classificationName, classificationId (Filter by type of event, like genre or segment)\n- includeFamily (Include family-friendly classifications)\n- promoterId, genreId, subGenreId, typeId, subTypeId (Filter by various IDs related to event categorization)\n- geoPoint (Filter events by geoHash)\n- includeSpellcheck (Include spell check suggestions in response)", prompt)},
+			{"role": "system", "content": "response_format={ \"type\": \"json_object\" }"},
 		},
 		"max_tokens": 500,
 	}

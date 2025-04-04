@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -59,6 +59,7 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 					"- link: url to more information about the activity.",
 					correctedDataString),
 			},
+			{"role": "system", "content": "response_format={ \"type\": \"json_object\" }"},
 		},
 		"max_tokens":  1500,
 		"temperature": 0.3,
@@ -83,7 +84,7 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 	}
 	defer resp.Body.Close()
 
-	responseData, err := ioutil.ReadAll(resp.Body)
+	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
@@ -117,12 +118,19 @@ func FormatData(service string, combinedData []CombinedData) ([]interface{}, err
 	// Remove `json` prefix if present
 	cleanedOutput = strings.TrimPrefix(cleanedOutput, "json")
 
-	var formattedData map[string]interface{}
+	var formattedData interface{}
 	if err := json.Unmarshal([]byte(cleanedOutput), &formattedData); err != nil {
 		return nil, fmt.Errorf("error parsing formatted data: %v", err)
 	}
 
-	parsedActivities = append(parsedActivities, formattedData)
+	switch data := formattedData.(type) {
+	case []interface{}:
+		parsedActivities = append(parsedActivities, data...)
+	case map[string]interface{}:
+		parsedActivities = append(parsedActivities, data)
+	default:
+		return nil, fmt.Errorf("unexpected data format: %T", formattedData)
+	}
 
 	return parsedActivities, nil
 }
