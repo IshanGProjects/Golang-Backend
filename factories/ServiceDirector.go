@@ -25,6 +25,8 @@ func NewServiceDirector() *ServiceDirector {
 	sd.Factories["Ticketing"] = &TicketmasterFactory{}
 	sd.Factories["Accommodations"] = &TripAdvisorFactory{}
 	sd.Factories["Restaurants"] = &TripAdvisorFactory{}
+	sd.Factories["TrendingEvents"] = &TwitterFactory{}
+	// TODO register twitter factory as social media
 	return sd
 }
 
