@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"bytes"
 	"net/http"
+	// "net/html"
 	"net/url"
 	"os"
 	"strings"
@@ -18,7 +21,7 @@ type TwitterFactory struct{}
 // CreateProduct creates a new TwitterProduct
 func (f *TwitterFactory) CreateProduct() AbstractProduct {
 	return &TwitterProduct{
-		TwitterProductBaseUrl: "http://localhost:8080/search",
+		TwitterProductBaseUrl: "http://host.docker.internal:8080/search",
 	}
 }
 
@@ -64,20 +67,64 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 
 	fullURL := fmt.Sprintf("%s?%s", p.TwitterProductBaseUrl, queryParams.Encode())
 	fmt.Println("The full Twitter search URL is:", fullURL)
+	
+	// Prepare the payload
+	data := map[string]string{
+		"prompt": "I want to go to a Japanese restaurant in Denver. I want to go to a basketball game in Denver.",
+	}
 
-	resp, err := http.Get(fullURL)
+	// Encode data to JSON
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request: %v", err)
+		panic(err)
+	}
+	
+	// Send POST request
+	resp, err := http.Post(fullURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		panic(err)
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Read and print response
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %v", err)
+		panic(err)
 	}
 
+	fmt.Println(string(body))
+
+	doc, err := html.Parse(strings.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+
+	var targetDivs []string
+
+	var traverse func(*html.Node)
+	traverse = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "div" {
+			for _, attr := range n.Attr {
+				if attr.Key == "class" && attr.Val == "tweet-content media-body" {
+					// Extract inner text
+					targetDivs = append(targetDivs, extractText(n))
+				}
+			}
+		}
+		// Recursively traverse children
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			traverse(c)
+		}
+	}
+	traverse(doc)
+
+	for i, div := range targetDivs {
+		fmt.Printf("Div #%d: %s\n", i+1, div)
+	}
+
+
 	var result interface{}
-	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("error decoding JSON response: %v", err)
 	}
 
@@ -95,6 +142,21 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 	default:
 		return nil, errors.New("unexpected response format")
 	}
+}
+
+func extractText(n *html.Node) string {
+	var sb strings.Builder
+	var extract func(*html.Node)
+	extract = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			sb.WriteString(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			extract(c)
+		}
+	}
+	extract(n)
+	return sb.String()
 }
 
 func AnalyzeTwitterPromptWithLLM(prompt string) (map[string]string, error) {
