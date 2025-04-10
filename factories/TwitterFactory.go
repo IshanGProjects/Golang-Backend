@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"bytes"
 	"net/http"
-	// "net/html"
+	"golang.org/x/net/html"
 	"net/url"
 	"os"
 	"strings"
@@ -59,6 +59,7 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 	since := now.AddDate(0, -1, 0).Format("2006-01-02")
 	until := now.Format("2006-01-02")
 
+	// Build the body
 	queryParams := url.Values{}
 	queryParams.Set("f", "tweets")
 	queryParams.Set("since", since)
@@ -67,20 +68,9 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 
 	fullURL := fmt.Sprintf("%s?%s", p.TwitterProductBaseUrl, queryParams.Encode())
 	fmt.Println("The full Twitter search URL is:", fullURL)
-	
-	// Prepare the payload
-	data := map[string]string{
-		"prompt": "I want to go to a Japanese restaurant in Denver. I want to go to a basketball game in Denver.",
-	}
 
-	// Encode data to JSON
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		panic(err)
-	}
-	
-	// Send POST request
-	resp, err := http.Post(fullURL, "application/json", bytes.NewBuffer(jsonData))
+	// Send GET request
+	resp, err := http.Get(fullURL)
 	if err != nil {
 		panic(err)
 	}
@@ -92,9 +82,7 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 		panic(err)
 	}
 
-	fmt.Println(string(body))
-
-	doc, err := html.Parse(strings.NewReader(body))
+	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		panic(err)
 	}
@@ -105,6 +93,7 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 	traverse = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "div" {
 			for _, attr := range n.Attr {
+				// extract out the raw tweets themselves from the divs titled "tweet-content media-body"
 				if attr.Key == "class" && attr.Val == "tweet-content media-body" {
 					// Extract inner text
 					targetDivs = append(targetDivs, extractText(n))
@@ -118,32 +107,39 @@ func (p *TwitterProduct) performHTTPRequest(query string) (map[string]interface{
 	}
 	traverse(doc)
 
+	// print extracted tweets to console log for debug purposes
+	fmt.Printf("Identified tweets:")
 	for i, div := range targetDivs {
 		fmt.Printf("Div #%d: %s\n", i+1, div)
 	}
-
-
-	var result interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("error decoding JSON response: %v", err)
+	
+	// Convert the targetDivs slice to a JSON array
+	jsonData, err := json.Marshal(targetDivs)
+	if err != nil {
+		panic(err)
 	}
 
-	switch res := result.(type) {
-	case map[string]interface{}:
-		return res, nil
-	case []interface{}:
-		if len(res) > 0 {
-			if first, ok := res[0].(map[string]interface{}); ok {
-				return first, nil
-			}
-			return nil, errors.New("first element is not a JSON object")
+	// Handle the response as a JSON array (since targetDivs is already an array)
+	var result []interface{}
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		panic(err)
+	}
+
+	// Wrap the result array in a map
+	if len(result) > 0 {
+		// Create a map with the array as a field
+		resultMap := map[string]interface{}{
+			"tweets": result, // tweets is the key, and the array is the value
 		}
-		return nil, errors.New("empty result array")
-	default:
-		return nil, errors.New("unexpected response format")
+
+		// Return the map containing the array of tweets
+		return resultMap, nil
+	} else {
+		return nil, errors.New("JSON array is empty")
 	}
 }
 
+// Function for pulling necessary divs (tweets) out of the HTML returned by the GET request
 func extractText(n *html.Node) string {
 	var sb strings.Builder
 	var extract func(*html.Node)

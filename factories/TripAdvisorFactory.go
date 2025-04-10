@@ -182,9 +182,6 @@ Consider valid actions such as:
 		},
 		"max_tokens": 500,
 	}
-	// TODO: copy json_object format verbatim
-	// TODO modify prompt on ln 169 to remove naything related to tickets / accommodations / and resturants (anything that is not social media)
-	// TODO do this for all of the factories
 
 	body, err := json.Marshal(requestBody)
 	if err != nil {
