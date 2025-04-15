@@ -2,7 +2,6 @@ package factories
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,6 +75,45 @@ func (p *TripAdvisorProduct) PerformAction(data map[string]string) (map[string]i
 	return p.performHTTPRequest(actionDetails)
 }
 
+func (p *TripAdvisorProduct) fetchLocationPhotos(locationID string) (string, error) {
+	photoURL := fmt.Sprintf("https://api.content.tripadvisor.com/api/v1/location/%s/photos?key=%s&limit=1", locationID, p.TripadvisorProductApiKey)
+
+	resp, err := http.Get(photoURL)
+	if err != nil {
+		return "", fmt.Errorf("error fetching photos: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("photo API returned status: %s", resp.Status)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading photo response: %v", err)
+	}
+
+	var photoResponse struct {
+		Data []struct {
+			Images struct {
+				Large struct {
+					URL string `json:"url"`
+				} `json:"large"`
+			} `json:"images"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &photoResponse); err != nil {
+		return "", fmt.Errorf("error unmarshaling photo response: %v", err)
+	}
+
+	if len(photoResponse.Data) > 0 {
+		return photoResponse.Data[0].Images.Large.URL, nil
+	}
+
+	return "", nil
+}
+
 func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[string]interface{}, error) {
 	// Construct the endpoint URL
 	baseURL := p.TripadvisorProductBaseUrl
@@ -109,35 +147,76 @@ func (p *TripAdvisorProduct) performHTTPRequest(tra TripadvisorAction) (map[stri
 	}
 	defer resp.Body.Close()
 
-	// Read the response body
+	// // Read the response body
+	// bodyBytes, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error reading response body: %v", err)
+	// }
+
+	// // Attempt to unmarshal into a generic interface first to inspect the data type
+	// var result interface{}
+	// if err := json.Unmarshal(bodyBytes, &result); err != nil {
+	// 	return nil, fmt.Errorf("error decoding JSON response: %v", err)
+	// }
+
+	// Read and unmarshal the response
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	// Attempt to unmarshal into a generic interface first to inspect the data type
-	var result interface{}
+	var result map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		return nil, fmt.Errorf("error decoding JSON response: %v", err)
 	}
 
-	// Handle both possible data types of the response
-	switch res := result.(type) {
-	case map[string]interface{}:
-		// The response is a single JSON object (map)
-		return res, nil
-	case []interface{}:
-		// The response is a JSON array
-		if len(res) > 0 {
-			if firstElem, ok := res[0].(map[string]interface{}); ok {
-				return firstElem, nil
-			}
-			return nil, errors.New("first element of the array is not a JSON object")
-		}
-		return nil, errors.New("JSON array is empty")
-	default:
-		return nil, errors.New("JSON response is neither an array nor an object")
+	// Check if 'data' field exists
+	data, ok := result["data"].([]interface{})
+	if !ok {
+		return result, nil // No data to process
 	}
+
+	for _, item := range data {
+		location, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check if 'location_id' exists
+		locationID, ok := location["location_id"].(string)
+		if !ok {
+			continue
+		}
+
+		// Fetch photo URL
+		imageURL, err := p.fetchLocationPhotos(locationID)
+		if err != nil {
+			fmt.Printf("Error fetching photo for location ID %s: %v\n", locationID, err)
+			continue
+		}
+
+		// Append image URL to the location data
+		location["image"] = imageURL
+	}
+	return result, nil
+
+	// // Handle both possible data types of the response
+	// switch res := result.(type) {
+	// case map[string]interface{}:
+	// 	// The response is a single JSON object (map)
+	// 	return res, nil
+	// case []interface{}:
+	// 	// The response is a JSON array
+	// 	if len(res) > 0 {
+	// 		if firstElem, ok := res[0].(map[string]interface{}); ok {
+	// 			return firstElem, nil
+	// 		}
+	// 		return nil, errors.New("first element of the array is not a JSON object")
+	// 	}
+	// 	return nil, errors.New("JSON array is empty")
+	// default:
+	// 	return nil, errors.New("JSON response is neither an array nor an object")
+	// }
 }
 
 // TripadvisorAction contains the action and parameters required for the Tripadvisor API
